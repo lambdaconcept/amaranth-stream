@@ -3,14 +3,14 @@ name = "amaranth-stream"
 version = "0.1.0"
 description = "Stream processing library for Amaranth HDL"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = ["amaranth>=0.5.10"]
 
 [build-system]
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
-[tool.pdm.dev-dependencies]
+
+[dependency-groups]
 dev = [
-    "pytest>=9.0.2",
-    "-e file:///${PROJECT_ROOT}/../amaranth#egg=amaranth",
+    "pytest>=8.4.2",
 ]
