@@ -8,7 +8,8 @@ import pytest
 
 from amaranth.hdl import Module, Signal, ClockDomain, unsigned
 from amaranth.lib.wiring import Component, In, Out, connect
-from amaranth.sim import Simulator, Period
+from amaranth.sim import Simulator
+from tests._compat import Period
 
 from amaranth_stream._base import Signature
 from amaranth_stream.sim import StreamSimSender, StreamSimReceiver

@@ -4,7 +4,8 @@ import pytest
 
 from amaranth import *
 from amaranth.hdl import unsigned
-from amaranth.sim import Simulator, Period
+from amaranth.sim import Simulator
+from tests._compat import Period
 
 from amaranth_stream._base import Signature
 from amaranth_stream.packet import (

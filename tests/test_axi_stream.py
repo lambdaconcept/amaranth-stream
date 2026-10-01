@@ -6,7 +6,8 @@ from amaranth import *
 from amaranth.hdl import unsigned, Signal, ClockDomain
 from amaranth.lib import wiring
 from amaranth.lib.wiring import In, Out, connect
-from amaranth.sim import Simulator, Period
+from amaranth.sim import Simulator
+from tests._compat import Period
 
 from amaranth_stream._base import Signature
 from amaranth_stream.axi_stream import (
@@ -180,7 +181,6 @@ class _StreamToAXIHarness(wiring.Component):
 
     def elaborate(self, platform):
         m = Module()
-        m.domains += ClockDomain("sync")
         m.submodules.bridge = bridge = self._bridge
 
         # Connect stream input
@@ -515,7 +515,6 @@ class _StreamToAXITfirstHarness(wiring.Component):
 
     def elaborate(self, platform):
         m = Module()
-        m.domains += ClockDomain("sync")
         m.submodules.bridge = bridge = self._bridge
 
         # Connect stream input

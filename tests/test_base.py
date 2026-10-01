@@ -424,7 +424,8 @@ class TestCoreToExtended:
 from amaranth import Module
 from amaranth.hdl import unsigned
 from amaranth.lib.wiring import In, Out
-from amaranth.sim import Simulator, Period
+from amaranth.sim import Simulator
+from tests._compat import Period
 
 from amaranth_stream._base import connect_streams
 from amaranth_stream.sim import StreamSimSender, StreamSimReceiver

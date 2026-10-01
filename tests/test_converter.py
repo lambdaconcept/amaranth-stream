@@ -6,7 +6,8 @@ import pytest
 
 from amaranth.hdl import unsigned, Shape
 from amaranth.lib import data
-from amaranth.sim import Simulator, Period
+from amaranth.sim import Simulator
+from tests._compat import Period
 
 from amaranth_stream._base import Signature
 from amaranth_stream.converter import (

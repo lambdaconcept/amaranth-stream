@@ -7,7 +7,8 @@ from amaranth import *
 from amaranth.hdl import unsigned, Signal
 from amaranth.lib import wiring
 from amaranth.lib.wiring import In, Out
-from amaranth.sim import Simulator, Period
+from amaranth.sim import Simulator
+from tests._compat import Period
 
 from amaranth_stream._base import Signature
 from amaranth_stream.buffer import Buffer, PipeValid, PipeReady
