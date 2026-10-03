@@ -13,7 +13,7 @@ from amaranth.hdl import Shape, Signal, unsigned
 from amaranth.lib import wiring
 from amaranth.lib.wiring import In, Out
 from amaranth.lib.data import StructLayout
-from amaranth.lib.fifo import SyncFIFO
+from amaranth.lib.fifo import SyncFIFO, SyncFIFOBuffered
 
 from ._base import Signature as StreamSignature
 
@@ -651,6 +651,11 @@ class Depacketizer(wiring.Component):
 class PacketFIFO(wiring.Component):
     """Atomic packet FIFO. Only releases complete packets.
 
+    The payload storage is read synchronously (one prefetch register in front
+    of the output) so that it maps to FPGA block RAM; the packet length FIFO
+    is tiny and stays in distributed RAM. A committed packet becomes visible
+    on ``o_stream`` two cycles after its last beat was accepted.
+
     Parameters
     ----------
     signature : :class:`~amaranth_stream.Signature`
@@ -712,8 +717,9 @@ class PacketFIFO(wiring.Component):
 
     def _elaborate_standard(self, m, sig, total_width, fields):
         """Original PacketFIFO implementation (no abort support)."""
-        # Data FIFO: stores packed stream data
-        data_fifo = SyncFIFO(width=total_width, depth=self._payload_depth)
+        # Data FIFO: stores packed stream data. Buffered (synchronous memory
+        # read + output register) so that the storage maps to block RAM.
+        data_fifo = SyncFIFOBuffered(width=total_width, depth=self._payload_depth)
         m.submodules.data_fifo = data_fifo
 
         # Packet length FIFO: stores beat counts for complete packets
@@ -810,10 +816,12 @@ class PacketFIFO(wiring.Component):
         addr_width = max(1, (depth - 1).bit_length())
 
         # --- Data memory (replaces SyncFIFO for data) ---
+        # Synchronous read port (block-RAM friendly): words are prefetched
+        # into the memory's output register one beat ahead of the consumer.
         data_mem = Memory(shape=unsigned(total_width), depth=depth, init=[])
         m.submodules.data_mem = data_mem
         wr_port = data_mem.write_port()
-        rd_port = data_mem.read_port(domain="comb")
+        rd_port = data_mem.read_port(domain="sync")
 
         # Packet length FIFO: stores beat counts for complete packets
         len_width = max(1, (self._payload_depth).bit_length())
@@ -823,10 +831,10 @@ class PacketFIFO(wiring.Component):
         # --- Write pointers ---
         # wr_ptr: current write position (advances with each beat)
         # commit_ptr: position at start of current packet (restored on abort)
-        # rd_ptr: current read position
+        # fetch_ptr: next committed word to prefetch into the output register
         wr_ptr = Signal(addr_width, name="wr_ptr")
         commit_ptr = Signal(addr_width, name="commit_ptr")
-        rd_ptr = Signal(addr_width, name="rd_ptr")
+        fetch_ptr = Signal(addr_width, name="fetch_ptr")
 
         # Level tracking: number of committed beats in the buffer
         # (committed means the packet has been fully written and committed)
@@ -926,17 +934,39 @@ class PacketFIFO(wiring.Component):
         rd_pkt_len = Signal(len_width, name="rd_pkt_len")
         reading = Signal(name="reading")
 
-        # Read port connections
-        m.d.comb += rd_port.addr.eq(rd_ptr)
+        # Prefetch: the memory output register holds the next word to be
+        # consumed (`out_valid`). Only committed words are ever fetched
+        # (`avail` counts committed words not yet fetched), so an abort can
+        # never invalidate the register.
+        avail = Signal(range(depth + 1), name="avail")
+        out_valid = Signal(name="out_valid")
+        do_fetch = Signal(name="do_fetch")
+        commit = Signal(name="commit")
+        m.d.comb += [
+            commit.eq(~self.abort & w_transfer & self.i_stream.last),
+            do_fetch.eq((avail != 0) & (~out_valid | r_transfer)),
+            rd_port.addr.eq(fetch_ptr),
+            rd_port.en.eq(do_fetch),
+        ]
+        m.d.sync += avail.eq(avail + Mux(commit, wr_beat_cnt + 1, 0) - do_fetch)
+        with m.If(do_fetch):
+            m.d.sync += out_valid.eq(1)
+            with m.If(fetch_ptr == depth - 1):
+                m.d.sync += fetch_ptr.eq(0)
+            with m.Else():
+                m.d.sync += fetch_ptr.eq(fetch_ptr + 1)
+        with m.Elif(r_transfer):
+            m.d.sync += out_valid.eq(0)
 
-        # Unpack data from memory read port
+        # Unpack data from the memory output register
         offset = 0
         for name, width in fields:
             m.d.comb += getattr(self.o_stream, name).eq(rd_port.data[offset:offset + width])
             offset += width
 
-        # Output valid only when we have a packet to read
-        m.d.comb += self.o_stream.valid.eq(reading)
+        # Output valid only when we have a packet to read and its next word
+        # has been fetched
+        m.d.comb += self.o_stream.valid.eq(reading & out_valid)
 
         # Override first/last with our own framing
         m.d.comb += [
@@ -958,12 +988,6 @@ class PacketFIFO(wiring.Component):
         with m.Else():
             # Currently reading a packet
             with m.If(r_transfer):
-                # Advance read pointer
-                with m.If(rd_ptr == depth - 1):
-                    m.d.sync += rd_ptr.eq(0)
-                with m.Else():
-                    m.d.sync += rd_ptr.eq(rd_ptr + 1)
-
                 with m.If(rd_beat_cnt == rd_pkt_len - 1):
                     # Finished this packet
                     m.d.sync += reading.eq(0)
